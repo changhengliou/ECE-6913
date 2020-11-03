@@ -1,0 +1,8 @@
+{
+  "editor.fontSize": 18,
+  "files.associations": {
+    "fstream": "cpp",
+    "vector": "cpp",
+    "bitset": "cpp"
+  }
+}

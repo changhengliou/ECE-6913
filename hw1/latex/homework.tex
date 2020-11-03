@@ -1,0 +1,226 @@
+\documentclass{article}
+
+\usepackage{fancyhdr}
+\usepackage{extramarks}
+\usepackage{amsmath}
+\usepackage{amsthm}
+\usepackage{amsfonts}
+\usepackage{tikz}
+\usepackage[plain]{algorithm}
+\usepackage{algpseudocode}
+\usepackage{hyperref}
+\usepackage{listings}
+
+\usetikzlibrary{automata,positioning}
+
+%
+% Basic Document Settings
+%
+
+\topmargin=-0.45in
+\evensidemargin=0in
+\oddsidemargin=0in
+\textwidth=6.5in
+\textheight=9.0in
+\headsep=0.25in
+
+\linespread{1.1}
+
+\pagestyle{fancy}
+\lhead{\hmwkAuthorName}
+\chead{\hmwkClass \hspace{1cm} \hmwkTitle}
+\rhead{\firstxmark}
+\lfoot{\lastxmark}
+\cfoot{\thepage}
+
+\renewcommand\headrulewidth{0.4pt}
+\renewcommand\footrulewidth{0.4pt}
+
+\setlength\parindent{0pt}
+
+%
+% Create Problem Sections
+%
+
+\newcommand{\enterProblemHeader}[1]{
+    \nobreak\extramarks{}{Problem \arabic{#1} continued on next page\ldots}\nobreak{}
+    \nobreak\extramarks{Problem \arabic{#1} (continued)}{Problem \arabic{#1} continued on next page\ldots}\nobreak{}
+}
+
+\newcommand{\exitProblemHeader}[1]{
+    \nobreak\extramarks{Problem \arabic{#1} (continued)}{Problem \arabic{#1} continued on next page\ldots}\nobreak{}
+    \stepcounter{#1}
+    \nobreak\extramarks{Problem \arabic{#1}}{}\nobreak{}
+}
+
+\setcounter{secnumdepth}{0}
+\newcounter{partCounter}
+\newcounter{homeworkProblemCounter}
+\setcounter{homeworkProblemCounter}{1}
+\nobreak\extramarks{Problem \arabic{homeworkProblemCounter}}{}\nobreak{}
+
+%
+% Homework Problem Environment
+%
+% This environment takes an optional argument. When given, it will adjust the
+% problem counter. This is useful for when the problems given for your
+% assignment aren't sequential. See the last 3 problems of this template for an
+% example.
+%
+\newenvironment{homeworkProblem}[1][-1]{
+    \ifnum#1>0
+        \setcounter{homeworkProblemCounter}{#1}
+    \fi
+    \section{Problem \arabic{homeworkProblemCounter}}
+    \setcounter{partCounter}{1}
+    \enterProblemHeader{homeworkProblemCounter}
+}{
+    \exitProblemHeader{homeworkProblemCounter}
+}
+
+%
+% Homework Details
+%   - Title
+%   - Due date
+%   - Class
+%   - Section/Time
+%   - Instructor
+%   - Author
+%
+
+\newcommand{\hmwkTitle}{Homework 1}
+\newcommand{\hmwkClass}{ECE-GY 6913}
+\newcommand{\hmwkStudentName}{Chang-Heng Liou}
+\newcommand{\hmwkStudentEmail}{cl5533@nyu.edu}
+
+%
+% Title Page
+%
+
+\title{
+    \vspace{2in}
+    \textmd{\textbf{\hmwkClass\\ \hmwkTitle}}\\
+    \vspace{0.1in}\large{\textit{\hmwkStudentName}}\\
+    \vspace{0.1in}\large{\textit{\hmwkStudentEmail}}
+    \vspace{3in}
+}
+
+\date{}
+
+\renewcommand{\part}[1]{\textbf{\large Part \Alph{partCounter}}\stepcounter{partCounter}\\}
+
+%
+% Various Helper Commands
+%
+
+% Useful for algorithms
+\newcommand{\alg}[1]{\textsc{\bfseries \footnotesize #1}}
+
+% For derivatives
+\newcommand{\deriv}[1]{\frac{\mathrm{d}}{\mathrm{d}x} (#1)}
+
+% For partial derivatives
+\newcommand{\pderiv}[2]{\frac{\partial}{\partial #1} (#2)}
+
+% Integral dx
+\newcommand{\dx}{\mathrm{d}x}
+
+% Alias for the Solution section header
+\newcommand{\solution}{\textbf{\large Solution}}
+
+% Probability commands: Expectation, Variance, Covariance, Bias
+\newcommand{\E}{\mathrm{E}}
+\newcommand{\Var}{\mathrm{Var}}
+\newcommand{\Cov}{\mathrm{Cov}}
+\newcommand{\Bias}{\mathrm{Bias}}
+\newcommand{\norm}[1]{\left\lVert#1\right\rVert}
+
+\begin{document}
+
+\maketitle
+
+\pagebreak
+
+\begin{homeworkProblem}
+    (Basic) Translate the following to MIPS instructions, minimize the number of instructions:
+    \begin{lstlisting}
+        f = g + h + i + j;
+        f = g + (h + 5);
+    \end{lstlisting}
+    If f, g, h, i, and j equal 1, 2, 3, 4, 5, then what is the final value of f?\\
+    \\
+    \textbf{Solution}\\
+    \begin{lstlisting}
+    .text
+        main:
+        li $t1, 2 # g
+        li $t2, 3 # h
+        li $t3, 4 # i
+        li $t4, 5 # j
+        add $t5, $t1, $t2 # g + h
+        add $t6, $t3, $t4 # i + j
+        add $t0, $t5, $t6 # f = (g + h) + (i + j)
+        addi $t5, $t2, 5 # h + 5
+        add $t0, $t1, $t5 # f = g + (h + 5)  
+    \end{lstlisting}
+
+\end{homeworkProblem}
+
+\pagebreak
+
+\begin{homeworkProblem}
+    (Accessing Memory) Translate the following to MIPS instructions, minimize thenumber of instructions:
+    \begin{lstlisting}
+        f = g + h + B[4];
+        g = g - A[B[4]];
+    \end{lstlisting}
+    Assume f, g, h, i, and j are assigned to \$s0, \$s1, \$s2, \$s3, and \$s4. 
+    Also assume thebase (starting) address of arrays A and B are in registers \$s6 and \$s7.\\
+    \\
+    \textbf{Solution}\\
+    \begin{lstlisting}
+    .data
+        A: .space 20
+        B: .space 20
+    .text
+        main:
+        la $t0, A # load address of array A
+        la $t1, B # load address of array B
+        add $s0, $s1, $s2 # f = g + h
+        add $s0, $s0, 16($t1) # f = (g + h) + B[4]
+        sub $s1, $s1, # DODO: A[B[4]]
+    \end{lstlisting}
+\end{homeworkProblem}
+
+\pagebreak
+
+\begin{homeworkProblem}
+    (Loops and branches) Translate the following to MIPS instructions, minimize the number of instructions.
+    You must use branch instructions, think about how to implement loops using the control (branch/jump) instructions. 
+    Two loops are givenin C, implement them separately
+    \begin{lstlisting}
+        for (int i = 0; i < 10; i++) {
+            a += b;
+        }
+        while (a < 10) {
+            D[a] = b + a;
+            a += 1;
+        }
+    \end{lstlisting}
+    \textbf{Solution}\\
+\end{homeworkProblem}
+
+\pagebreak
+
+\begin{homeworkProblem}
+    (Recursive function) Implement factorial (code below) in the MIPS ISA. Pay careful attention to the return address register.
+    \begin{lstlisting}
+        int fact(int n) {
+            if (n < 1) return 1;
+            return (n x fact(n - 1));
+        } 
+    \end{lstlisting}
+    \textbf{Solution}\\
+\end{homeworkProblem}
+
+\end{document}

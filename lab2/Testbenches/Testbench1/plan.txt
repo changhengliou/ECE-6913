@@ -1,0 +1,13 @@
+lw $0, $1, 0
+lw $0, $2, 4
+lw $0, $3, 0
+lw $0, $4, 4
+lw $0, $5, 0
+addu $1, $2, $6
+subu $1, $2, $7
+sw $0, $1, 8
+halt
+
+DM:
+0: 0xffffffff
+4: 0x7ffffffe
