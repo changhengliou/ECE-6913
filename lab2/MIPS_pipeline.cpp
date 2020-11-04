@@ -9,7 +9,7 @@ using namespace std;
 
 #define __LOCAL_ENV__
 #ifdef __LOCAL_ENV__
-const string cwd = "/Users/line/Desktop/nyu/Computer architecture ECE-GY 6913/lab2/Testbenches/Testbench1/";
+const string cwd = "/Users/line/Desktop/nyu/Computer architecture ECE-GY 6913/lab2/Testbenches/Testbench2/";
 #endif
 
 struct IFStruct {
@@ -250,7 +250,9 @@ void stats(stateStruct& state) {
   cout << "[IF] => PC: " << state.IF.PC.to_ulong() << ", nop: " << state.IF.nop << endl;
   cout << "[ID] => Instr: " << id.Instr << ", nop: " << id.nop << endl;
   cout << "[EX] => Rs: " << ex.Rs.to_ulong() << ", Rt: " << ex.Rt.to_ulong() <<
-       ", Wrt_reg: " << ex.Wrt_reg_addr.to_ulong() << ", nop: " << ex.nop << endl;
+       ", Wrt_reg: " << ex.Wrt_reg_addr.to_ulong() <<
+       ", Read1: " << ex.Read_data1.to_ulong() << ", Read2: " << ex.Read_data2.to_ulong() <<
+       ", nop: " << ex.nop << endl;
   cout << "[MEM] => Rs: " << mem.Rs.to_ulong() << ", Rt: " << mem.Rt.to_ulong() <<
        ", Wrt_reg: " << mem.Wrt_reg_addr.to_ulong() << ", nop: " << mem.nop << endl;
   cout << "[WB] => Rs: " << wb.Rs.to_ulong() << ", Rt: " << wb.Rt.to_ulong() <<
@@ -283,15 +285,32 @@ int main() {
     auto& wb = state.WB;
     auto& mem = state.MEM;
     bool nop = false;
-    // TODO: LOAD-ADD hazard, stall here
-    if (mem.rd_mem && (ex.Rs == mem.Wrt_reg_addr.to_ulong() || ex.Rt == mem.Wrt_reg_addr.to_ulong())) {
+    int nextPC = -1;
+
+    const auto instr = id.Instr.to_ulong();
+    const auto opCode = (instr & 0xfc000000) >> 26;
+    const auto rs = (instr & 0x03e00000) >> 21;
+    const auto rt = (instr & 0x001f0000) >> 16;
+    const auto rd = (instr & 0x0000f800) >> 11;
+    const auto funct = instr & 0x0000003f;
+    const auto imme = instr & 0x0000ffff;
+    const auto signExtendImme = (int32_t) (id.Instr[15] == 1 ? (imme | 0xffff0000) : imme);
+    const auto isRType = opCode == 0;
+    const auto isIType = !isRType;
+    const auto isBranch = opCode == 0x04;
+
+    // LOAD-ADD hazard, stall here (notice that we don't have to stall when there is LOAD-STORE dependency)
+    if (mem.rd_mem && !ex.wrt_mem && (ex.Rs == mem.Wrt_reg_addr.to_ulong() || ex.Rt == mem.Wrt_reg_addr.to_ulong())) {
       cout << "------------------------------" << endl;
       cout << "LOAD-ADD hazard STALL" << endl;
+      stall = true;
+    } else if (isBranch && (ex.Wrt_reg_addr == rs || ex.Wrt_reg_addr == rt)) {
+      cout << "------------------------------" << endl;
+      cout << "Control hazard STALL" << endl;
       stall = true;
     } else {
       stall = false;
     }
-
     /* --------------------- WB stage --------------------- */
     bool wb_nop = cycle < 3 || (mem.Rs == 31 && mem.Rt == 31 && mem.Wrt_reg_addr == 31);
     if (mem.wrt_mem && !wb_nop) {
@@ -347,25 +366,12 @@ int main() {
     }
 
     /* --------------------- EX stage --------------------- */
-    const auto instr = id.Instr.to_ulong();
-    const auto opCode = (instr & 0xfc000000) >> 26;
-    const auto rs = (instr & 0x03e00000) >> 21;
-    const auto rt = (instr & 0x001f0000) >> 16;
-    const auto rd = (instr & 0x0000f800) >> 11;
-    const auto funct = instr & 0x0000003f;
-    const auto imme = instr & 0x0000ffff;
-    const auto signExtendImme = (int32_t) (id.Instr[15] == 1 ? (imme | 0xffff0000) : imme);
-    const auto isRType = opCode == 0;
-    const auto isIType = !isRType;
-    const auto isBranch = opCode == 0x04;
-
     nop = (rs == rt && rt == rd && rs == 0) || instr == 0xffffffff || stall;
     // write before read to prevent structure hazard
     if (wb.wrt_enable && !wb_nop) {
       myRF.writeRF(wb.Wrt_reg_addr, wb.Wrt_data);
     }
     if (!stall) {
-      // TODO: resolve branch here
       newState.EX.Rs = rs;
       newState.EX.Rt = rt;
       newState.EX.Wrt_reg_addr = isIType ? rt : rd;
@@ -377,6 +383,14 @@ int main() {
       newState.EX.rd_mem = opCode == 0x23; // lw
       newState.EX.wrt_mem = opCode == 0x2b; // sw
       newState.EX.wrt_enable = !nop && !(opCode == 0x2b || isBranch); // not sw, beq;
+
+      // TODO: resolve branch here
+      if (isBranch) {
+        if (newState.EX.Read_data1 != newState.EX.Read_data2) {
+          // TODO: flush all and jump back
+          nextPC = state.ID.Instr.to_ulong() + signExtendImme * 4;
+        }
+      }
     } else {
       newState.EX.Read_data1 = myRF.readRF(ex.Rs);
       newState.EX.Read_data2 = myRF.readRF(ex.Rt);
