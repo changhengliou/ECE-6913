@@ -9,7 +9,7 @@ using namespace std;
 
 #define __LOCAL_ENV__
 #ifdef __LOCAL_ENV__
-const string cwd = "/Users/line/Desktop/nyu/Computer architecture ECE-GY 6913/lab2/Testbenches/Testbench2/";
+const string cwd = "/Users/line/Desktop/nyu/Computer architecture ECE-GY 6913/lab2/Testbenches/Testbench1/";
 #endif
 
 struct IFStruct {
@@ -258,6 +258,10 @@ void stats(stateStruct& state) {
   cout << "[WB] => Rs: " << wb.Rs.to_ulong() << ", Rt: " << wb.Rt.to_ulong() <<
        ", Wrt_reg: " << wb.Wrt_reg_addr.to_ulong() << ", nop: " << wb.nop << endl;
 }
+
+long to_long(bitset<32>& x) {
+  return (int32_t) x.to_ulong();
+}
 // R-type opcode(6) rs(5) rt(5) rd(5) shamt(5) funct(6)
 // I-type opcode(6) rs(5) rt(5) immediate(16)
 //
@@ -285,7 +289,7 @@ int main() {
     auto& wb = state.WB;
     auto& mem = state.MEM;
     bool nop = false;
-    int nextPC = -1;
+    long jmpPC = -1;
 
     const auto instr = id.Instr.to_ulong();
     const auto opCode = (instr & 0xfc000000) >> 26;
@@ -334,25 +338,25 @@ int main() {
       unsigned long data2;
       if (mem.Wrt_reg_addr == ex.Rs) {
         // ex-mem forwarding
-        data1 = mem.ALUresult.to_ulong();
+        data1 = to_long(mem.ALUresult);
       } else if (wb.Wrt_reg_addr == ex.Rs) {
         // mem-ex forwarding
-        data1 = wb.Wrt_data.to_ulong();
+        data1 = to_long(wb.Wrt_data);
       } else {
-        data1 = ex.Read_data1.to_ulong();
+        data1 = to_long(ex.Read_data1);
       }
       if (mem.Wrt_reg_addr == ex.Rt) {
         // ex-mem forwarding
-        data2 = mem.ALUresult.to_ulong();
+        data2 = to_long(mem.ALUresult);
       } else if (wb.Wrt_reg_addr == ex.Rt) {
         // mem-ex forwarding
-        data2 = wb.Wrt_data.to_ulong();
+        data2 = to_long(wb.Wrt_data);
       } else {
-        data2 = ex.Read_data2.to_ulong();
+        data2 = to_long(ex.Read_data2);
       }
       long aluResult = data1 + (ex.alu_op ? 1 : -1) * data2;
       if (ex.is_I_type) {
-        aluResult = data1 + ex.Imm.to_ulong();
+        aluResult = data1 + static_cast<int16_t>(ex.Imm.to_ulong());
       }
       newState.MEM.ALUresult = aluResult;
       newState.MEM.Wrt_reg_addr = ex.Wrt_reg_addr;
@@ -386,9 +390,27 @@ int main() {
 
       // TODO: resolve branch here
       if (isBranch) {
-        if (newState.EX.Read_data1 != newState.EX.Read_data2) {
+        auto mem_reg_wrt_addr = mem.Wrt_reg_addr.to_ulong();
+        // forward from the EX stage in the below case
+        // we need to detect if branch is taken or not at the ID stage
+        // but at the ID stage, $2 from the first addu is still at the
+        // EX stage. So we forward it to the ID stage for comparing.
+        // IF ID EX MEM WB
+        //    IF ID EX  MEM WB
+        //       IF ID  EX  MEM WB
+        // addu $2, $1, $2
+        // addu $1, $0, $1
+        // beq $2, $3, -3
+        long data1 = rs == mem_reg_wrt_addr ? to_long(mem.ALUresult) : to_long(newState.EX.Read_data1);
+        long data2 = rt == mem_reg_wrt_addr ? to_long(mem.ALUresult) : to_long(newState.EX.Read_data2);
+        if (data1 != data2) {
           // TODO: flush all and jump back
-          nextPC = state.ID.Instr.to_ulong() + signExtendImme * 4;
+          newState.EX = EXStruct();
+          nop = true;
+          cout << "------------------------------" << endl;
+          cout << "FLUSH ALL: " << data1 << " != " << data2 <<
+               ", jump to " << (to_long(state.IF.PC) + signExtendImme * 4) << endl;
+          jmpPC = to_long(state.IF.PC) + signExtendImme * 4;
         }
       }
     } else {
@@ -400,8 +422,10 @@ int main() {
     /* --------------------- ID stage --------------------- */
     if (!isHalt && myInsMem.Instruction.to_ulong() == 0xffffffff)
       isHalt = true;
-    nop = stall || isHalt;
-    if (!nop) {
+    nop = stall || isHalt || jmpPC >= 0;
+    if (jmpPC >= 0) {
+      newState.ID.Instr = myInsMem.readInstr(jmpPC);
+    } else if (!nop) {
       newState.ID.Instr = myInsMem.readInstr(state.IF.PC);
     }
     newState.ID.nop = nop;
@@ -409,7 +433,10 @@ int main() {
     /* --------------------- IF stage --------------------- */
     nop = stall || isHalt;
     newState.IF.nop = nop;
-    newState.IF.PC = state.IF.PC.to_ulong() + (nop ? 0 : 4);
+    auto currPC = jmpPC >= 0 ? jmpPC : state.IF.PC.to_ulong();
+    if (!nop) {
+      newState.IF.PC = currPC + (nop ? 0 : 4);
+    }
 
     stats(newState);
 
