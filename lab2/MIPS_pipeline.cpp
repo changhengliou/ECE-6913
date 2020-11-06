@@ -7,9 +7,10 @@
 using namespace std;
 #define MemSize 1000 // memory size, in reality, the memory size should be 2^32, but for this lab, for the space resaon, we keep it as this large number, but the memory is still 32-bit addressable.
 
-#define __LOCAL_ENV__
+// author: Chang-Heng Liou <cl5533@nyu.edu>
+// #define __LOCAL_ENV__
 #ifdef __LOCAL_ENV__
-const string cwd = "/Users/line/Desktop/nyu/Computer architecture ECE-GY 6913/lab2/Testbenches/Testbench1/";
+const string cwd = "/Users/line/Desktop/nyu/Computer architecture ECE-GY 6913/lab2/Testbenches/Testbench7/";
 #endif
 
 struct IFStruct {
@@ -308,32 +309,28 @@ int main() {
       cout << "------------------------------" << endl;
       cout << "LOAD-ADD hazard STALL" << endl;
       stall = true;
-    } else if (isBranch && (ex.Wrt_reg_addr == rs || ex.Wrt_reg_addr == rt)) {
-      cout << "------------------------------" << endl;
-      cout << "Control hazard STALL" << endl;
-      stall = true;
     } else {
       stall = false;
     }
     /* --------------------- WB stage --------------------- */
-    bool wb_nop = cycle < 3 || (mem.Rs == 31 && mem.Rt == 31 && mem.Wrt_reg_addr == 31);
-    if (mem.wrt_mem && !wb_nop) {
+    nop = cycle < 3 || (mem.Rs == 31 && mem.Rt == 31 && mem.Wrt_reg_addr == 31) || (mem.Rs == 0 && mem.Rt == 0 && mem.ALUresult == 0 && mem.nop);
+    if (mem.wrt_mem && !nop) {
       myDataMem.writeDataMem(mem.ALUresult, wb.Wrt_reg_addr == mem.Rt ? wb.Wrt_data : mem.Store_data);
     }
     const auto writeBackData = mem.rd_mem ? myDataMem.readDataMem(mem.ALUresult) : mem.ALUresult;
-    newState.WB.wrt_enable = !wb_nop && mem.wrt_enable;
+    newState.WB.wrt_enable = !nop && mem.wrt_enable;
     newState.WB.Wrt_reg_addr = mem.Wrt_reg_addr;
     newState.WB.Rs = mem.Rs;
     newState.WB.Rt = mem.Rt;
     newState.WB.Wrt_data = writeBackData;
-    newState.WB.nop = wb_nop;
+    newState.WB.nop = nop;
 
     /* --------------------- MEM stage --------------------- */
     if (stall) {
       newState.MEM = MEMStruct();
       newState.MEM.nop = true;
     } else {
-      nop = cycle < 2 || (ex.Rs == 31 && ex.Rt == 31 && ex.Wrt_reg_addr == 31);
+      nop = cycle < 2 || (ex.Rs == 31 && ex.Rt == 31 && ex.Wrt_reg_addr == 31) || (ex.Rs == 0 && ex.Rt == 0 && ex.Wrt_reg_addr == 0 && !ex.wrt_enable && !ex.wrt_mem);
       unsigned long data1;
       unsigned long data2;
       if (mem.Wrt_reg_addr == ex.Rs) {
@@ -360,7 +357,7 @@ int main() {
       }
       newState.MEM.ALUresult = aluResult;
       newState.MEM.Wrt_reg_addr = ex.Wrt_reg_addr;
-      newState.MEM.Store_data = ex.Read_data2;
+      newState.MEM.Store_data = data2;
       newState.MEM.Rs = ex.Rs;
       newState.MEM.Rt = ex.Rt;
       newState.MEM.wrt_enable = !nop && ex.wrt_enable;
@@ -372,7 +369,7 @@ int main() {
     /* --------------------- EX stage --------------------- */
     nop = (rs == rt && rt == rd && rs == 0) || instr == 0xffffffff || stall;
     // write before read to prevent structure hazard
-    if (wb.wrt_enable && !wb_nop) {
+    if (wb.wrt_enable) {
       myRF.writeRF(wb.Wrt_reg_addr, wb.Wrt_data);
     }
     if (!stall) {
@@ -406,7 +403,6 @@ int main() {
         if (data1 != data2) {
           // TODO: flush all and jump back
           newState.EX = EXStruct();
-          nop = true;
           cout << "------------------------------" << endl;
           cout << "FLUSH ALL: " << data1 << " != " << data2 <<
                ", jump to " << (to_long(state.IF.PC) + signExtendImme * 4) << endl;
@@ -424,7 +420,7 @@ int main() {
       isHalt = true;
     nop = stall || isHalt || jmpPC >= 0;
     if (jmpPC >= 0) {
-      newState.ID.Instr = myInsMem.readInstr(jmpPC);
+      newState.ID.Instr = bitset<32>();
     } else if (!nop) {
       newState.ID.Instr = myInsMem.readInstr(state.IF.PC);
     }
@@ -433,9 +429,8 @@ int main() {
     /* --------------------- IF stage --------------------- */
     nop = stall || isHalt;
     newState.IF.nop = nop;
-    auto currPC = jmpPC >= 0 ? jmpPC : state.IF.PC.to_ulong();
     if (!nop) {
-      newState.IF.PC = currPC + (nop ? 0 : 4);
+      newState.IF.PC = jmpPC >= 0 ? jmpPC : state.IF.PC.to_ulong() + 4;
     }
 
     stats(newState);
