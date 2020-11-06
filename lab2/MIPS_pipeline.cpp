@@ -10,7 +10,7 @@ using namespace std;
 // author: Chang-Heng Liou <cl5533@nyu.edu>
 // #define __LOCAL_ENV__
 #ifdef __LOCAL_ENV__
-const string cwd = "/Users/line/Desktop/nyu/Computer architecture ECE-GY 6913/lab2/Testbenches/Testbench7/";
+const string cwd = "/Users/line/Desktop/nyu/Computer architecture ECE-GY 6913/lab2/Testbenches/Testbench5/";
 #endif
 
 struct IFStruct {
@@ -282,6 +282,7 @@ int main() {
   int cycle = 0;
   bool isHalt = false;
   bool stall = false;
+  int flushStage = -1; // status of bubble for flush
 
   while (true) {
     stateStruct newState = state;
@@ -303,6 +304,7 @@ int main() {
     const auto isRType = opCode == 0;
     const auto isIType = !isRType;
     const auto isBranch = opCode == 0x04;
+    if (flushStage > 0) flushStage++;
 
     // LOAD-ADD hazard, stall here (notice that we don't have to stall when there is LOAD-STORE dependency)
     if (mem.rd_mem && !ex.wrt_mem && (ex.Rs == mem.Wrt_reg_addr.to_ulong() || ex.Rt == mem.Wrt_reg_addr.to_ulong())) {
@@ -313,7 +315,8 @@ int main() {
       stall = false;
     }
     /* --------------------- WB stage --------------------- */
-    nop = cycle < 3 || (mem.Rs == 31 && mem.Rt == 31 && mem.Wrt_reg_addr == 31) || (mem.Rs == 0 && mem.Rt == 0 && mem.ALUresult == 0 && mem.nop);
+    nop = cycle < 3 || (mem.Rs == 31 && mem.Rt == 31 && mem.Wrt_reg_addr == 31) || flushStage == 4;
+    if (flushStage >= 4) flushStage = -1;
     if (mem.wrt_mem && !nop) {
       myDataMem.writeDataMem(mem.ALUresult, wb.Wrt_reg_addr == mem.Rt ? wb.Wrt_data : mem.Store_data);
     }
@@ -330,9 +333,9 @@ int main() {
       newState.MEM = MEMStruct();
       newState.MEM.nop = true;
     } else {
-      nop = cycle < 2 || (ex.Rs == 31 && ex.Rt == 31 && ex.Wrt_reg_addr == 31) || (ex.Rs == 0 && ex.Rt == 0 && ex.Wrt_reg_addr == 0 && !ex.wrt_enable && !ex.wrt_mem);
-      unsigned long data1;
-      unsigned long data2;
+      nop = cycle < 2 || (ex.Rs == 31 && ex.Rt == 31 && ex.Wrt_reg_addr == 31) || flushStage == 3;
+      long data1;
+      long data2;
       if (mem.Wrt_reg_addr == ex.Rs) {
         // ex-mem forwarding
         data1 = to_long(mem.ALUresult);
@@ -407,6 +410,7 @@ int main() {
           cout << "FLUSH ALL: " << data1 << " != " << data2 <<
                ", jump to " << (to_long(state.IF.PC) + signExtendImme * 4) << endl;
           jmpPC = to_long(state.IF.PC) + signExtendImme * 4;
+          flushStage = 1;
         }
       }
     } else {
@@ -416,14 +420,14 @@ int main() {
     newState.EX.nop = nop;
 
     /* --------------------- ID stage --------------------- */
-    if (!isHalt && myInsMem.Instruction.to_ulong() == 0xffffffff)
-      isHalt = true;
-    nop = stall || isHalt || jmpPC >= 0;
-    if (jmpPC >= 0) {
+    bool isFlush = jmpPC >= 0 || flushStage == 1;
+    nop = stall || isHalt || isFlush;
+    if (isFlush) {
       newState.ID.Instr = bitset<32>();
     } else if (!nop) {
       newState.ID.Instr = myInsMem.readInstr(state.IF.PC);
     }
+    if (!isHalt && myInsMem.Instruction.to_ulong() == 0xffffffff) nop = isHalt = true;
     newState.ID.nop = nop;
 
     /* --------------------- IF stage --------------------- */
