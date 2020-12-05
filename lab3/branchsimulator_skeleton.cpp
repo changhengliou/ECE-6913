@@ -43,7 +43,7 @@ int main (int argc, char** argv) {
 	trace.open(tracePath);
 
 	string line;
-	vector<bitset<2>> counter(pow(2, m), bitset<2>(11));
+	vector<int> counter(pow(2, m), pow(2, k) - 1);
 	while (getline(trace, line)) {
 		unsigned long pc; bool taken;
 		istringstream iss(line);
@@ -52,12 +52,12 @@ int main (int argc, char** argv) {
 		// TODO: branch prediction here
     auto lsb = pc & static_cast<unsigned long>(pow(2, m) - 1);
 
-    out << counter[lsb][1] << endl;
+    out << ((counter[lsb] >> (k - 1)) & 1) << endl;
 
     if (taken) {
-      counter[lsb] = min(static_cast<int>(counter[lsb].to_ulong() + 1), 3);
+      counter[lsb] = min(static_cast<int>(counter[lsb] + 1), 3);
     } else {
-      counter[lsb] = max(static_cast<int>(counter[lsb].to_ulong() - 1), 0);
+      counter[lsb] = max(static_cast<int>(counter[lsb] - 1), 0);
     }
 	}
 	 

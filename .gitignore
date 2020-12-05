@@ -2,7 +2,9 @@
 lab1/cmake-build-debug/*
 lab2/cmake-build-debug/*
 lab3/cmake-build-debug/*
+lab4/cmake-build-debug/*
 *.zip
 *.pdf
 !Lecture*.pdf
 !lab2/Lab2_description_2020.pdf
+trace.txt.out
