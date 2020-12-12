@@ -1,2 +1,2 @@
 cachesimulator: cachesimulator.cpp
-	g++ cachesimulator.cpp -o cachesimulator.out
+	g++ --std=c++14 cachesimulator.cpp -o cachesimulator.out
