@@ -8,3 +8,6 @@ lab4/cmake-build-debug/*
 !Lecture*.pdf
 !lab2/Lab2_description_2020.pdf
 trace.txt.out
+*.ppt
+*.pptx
+*.jpeg

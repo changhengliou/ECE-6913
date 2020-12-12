@@ -4,14 +4,13 @@ Level one L1 and level two L2 cache parameters are read from file (block size, l
 The 32 bit address is divided into tag bits (t), set index bits (s) and block offset bits (b)
 s = log2(#sets)   b = log2(block size)  t=32-s-b
 */
-#include <iostream>
 #include <fstream>
 #include <string>
 #include <sstream>
-#include <vector>
 #include <iomanip>
 #include <cmath>
 #include <bitset>
+#include "cache.hh"
 
 using namespace std;
 
@@ -25,62 +24,17 @@ using namespace std;
 #define WM 4 // write miss
 
 
-struct config {
-  int L1blocksize;
-  int L1setsize;
-  int L1size;
-  int L2blocksize;
-  int L2setsize;
-  int L2size;
-};
-
-__wrap_iter<vector<unsigned int, allocator<unsigned int>> *>
-find_first_empty_way(vector<vector<uint32_t>>& cache, int index) {
-  return find_if(begin(cache), end(cache), [&index](const auto& way){
-    return way[index] >> 31 == 0;
-  });
-}
-
-// TODO: cache data structure
-struct cache {
-  u_int32_t blockSize;
-  u_int32_t setSize;
-  u_int32_t cacheSize;
-  u_int32_t blockEntries;
-  u_int32_t offset;
-  u_int32_t index;
-  u_int32_t tag;
-  u_int32_t evictionCounter;
-  vector<vector<uint32_t>> data;
-
-  cache(const int blockSize, const int setSize, const int cacheSize) : blockSize(blockSize), setSize(setSize),
-                                                                       cacheSize(cacheSize),
-                                                                       evictionCounter(0) {
-    // 8 1 16
-    // 16 4 32
-    if (!setSize) { // fully associate
-      blockEntries = 1;
-      data.resize(pow(2, 10) * cacheSize / blockSize);
-      for (auto &&s : data) {
-        s.resize(blockEntries);
-      }
-    } else {
-      data.resize(setSize);
-      blockEntries = pow(2, 10) * cacheSize / blockSize / setSize;
-      for (auto &&s : data) {
-        s.resize(blockEntries);
-      }
-    }
-
-    cout << "-----------------------" << endl;
-    cout << "SetSize: " << data.size() << " , blockSize: " << blockSize << ",  " << blockEntries << endl;
-    offset = log2(blockSize);
-    index = log2(blockEntries);
-    tag = 32 - offset - index;
-    cout << "TagSize: " << tag << ", Offset: " << offset << ", Index: " << index << endl;
-  }
-};
-
+// L1 L2
+// RM RM -> bring back to L1
+// RM RH -> bring back to L1 from L2
+// RH NA
+// ----------
+// WH NA
+// WM WH
+// WM WM
+// Read miss: issue a new request to low level cache, place in empty way or evicted if hit
+// Write hit: lazy
+// Write no allocate: forward to low level when write miss
 int main(int argc, char *argv[]) {
   config cacheconfig;
   ifstream cache_params;
@@ -141,54 +95,63 @@ int main(int argc, char *argv[]) {
       saddr >> std::hex >> addr;
       accessaddr = bitset<32>(addr);
 
-      u_int32_t l1_offset = addr & (static_cast<int>(pow(2, l1_cache.offset) - 1));
-      u_int32_t l1_index = (addr >> l1_cache.offset) & (static_cast<int>(pow(2, l1_cache.index) - 1));
-      u_int32_t l1_tag = addr >> (l1_cache.offset + l1_cache.index);
+      unsigned int l1_offset = addr & (static_cast<int>(pow(2, l1_cache.offset) - 1));
+      unsigned int l1_index = (addr >> l1_cache.offset) & (static_cast<int>(pow(2, l1_cache.index) - 1));
+      unsigned int l1_tag = addr >> (l1_cache.offset + l1_cache.index);
 
-      u_int32_t l2_offset = addr & (static_cast<int>(pow(2, l2_cache.offset) - 1));
-      u_int32_t l2_index = (addr >> l2_cache.offset) & (static_cast<int>(pow(2, l2_cache.index) - 1));
-      u_int32_t l2_tag = addr >> (l2_cache.offset + l2_cache.index);
+      unsigned int l2_offset = addr & (static_cast<int>(pow(2, l2_cache.offset) - 1));
+      unsigned int l2_index = (addr >> l2_cache.offset) & (static_cast<int>(pow(2, l2_cache.index) - 1));
+      unsigned int l2_tag = addr >> (l2_cache.offset + l2_cache.index);
 
       L1AcceState = NA;
       L2AcceState = NA;
 
       // access the L1 and L2 Cache according to the trace;
+      auto it = find_match(l1_cache, l1_index, addr);
       if (accesstype == "R") {
         // TODO: Implement by you:
         // read access to the L1 Cache,
         // and then L2 (if required),
         // update the L1 and L2 access state variable;
-
-        if (any_of(begin(l1_cache.data), end(l1_cache.data), [&l1_cache, &l1_index, &l1_tag](const vector<uint32_t>& way){return way[l1_index] == (l1_tag | 0x80000000);})) {
+        if (it != l1_cache.data.end()) {
           L1AcceState = RH;
         } else {
           // read miss for L1
           L1AcceState = RM;
-          if (any_of(begin(l2_cache.data), end(l2_cache.data), [&l2_cache, &l2_index, &l2_tag](const vector<uint32_t>& way){return way[l2_index] == (l2_tag | 0x80000000);})) {
+          auto it2 = find_match(l2_cache, l2_index, addr);
+          if (it2 != l2_cache.data.end()) {
             // read hit for L2
+            // TODO: write back to L1
+            // TODO: remove data on L2
             L2AcceState = RH;
+            (*it2)[l2_index].valid = false;
           } else {
             // read missed for both L1 and L2
+            // TODO: write back to L1
             L2AcceState = RM;
           }
-          auto it = find_first_empty_way(l1_cache.data, l1_index);
-          if (it == l1_cache.data.end()) {
-            // no space left, eviction happened.
-            l1_cache.data[l1_cache.evictionCounter++][l1_index] = l1_tag | 0x80000000;
-            if (l1_cache.evictionCounter == l1_cache.setSize) l1_cache.evictionCounter = 0;
+
+          // TODO: write back to L1
+          auto empty_spot = find_first_empty_way(l1_cache.data, l1_index);
+          if (empty_spot != l1_cache.data.end()) {
+            // empty space found, L1 write hit
+            (*empty_spot)[l1_index].addr = addr;
+            (*empty_spot)[l1_index].valid = true;
           } else {
-            // find a space, just write back to L1
-            (*it)[l1_index] = l1_tag | 0x80000000;
-          }
-          if (L2AcceState == RM) {
-            auto it2 = find_first_empty_way(l2_cache.data, l2_index);
-            if (it2 == l2_cache.data.end()) {
-              // no space left, eviction happened.
-              l2_cache.data[l2_cache.evictionCounter++][l2_index] = l2_tag | 0x80000000;
-              if (l2_cache.evictionCounter == l2_cache.setSize) l2_cache.evictionCounter = 0;
+            // no space left, evict round-robbin
+            auto to_be_evict = l1_cache.data[l1_cache.evictionCounter][l1_index];
+            l1_cache.data[l1_cache.evictionCounter++][l1_index] = {.addr = addr, .valid=true};
+            l1_cache.evictionCounter = l1_cache.evictionCounter >= l1_cache.setSize ? 0 : l1_cache.evictionCounter;
+            // write data to L2
+            empty_spot = find_first_empty_way(l2_cache.data, l2_index);
+            if (empty_spot != l2_cache.data.end()) {
+              // empty space found, L2 write hit
+              (*empty_spot)[l2_index].addr = to_be_evict.addr;
+              (*empty_spot)[l2_index].valid = true;
             } else {
-              // find a space, just write back to L1
-              (*it2)[l2_index] = l2_tag | 0x80000000;
+              // no space left, evict something
+              l2_cache.data[l2_cache.evictionCounter++][l2_index] = {.addr = to_be_evict.addr, .valid=true};
+              l2_cache.evictionCounter = l2_cache.evictionCounter >= l2_cache.setSize ? 0 : l2_cache.evictionCounter;
             }
           }
         }
@@ -197,23 +160,39 @@ int main(int argc, char *argv[]) {
         // write access to the L1 Cache,
         // and then L2 (if required),
         // update the L1 and L2 access state variable;
-        // <valid, dirty, ...., tag>
-        auto it = find_first_empty_way(l1_cache.data, l1_index);
+        // <valid, ...., tag>
         if (it != l1_cache.data.end()) {
-          (*it)[l1_index] = l1_tag | 0x80000000;
+          (*it)[l1_index].addr = addr; // set valid bit to 1
+          (*it)[l1_index].valid = true;
           L1AcceState = WH;
         } else {
-          // no empty spot left, WRITE_MISS
-          // WRITE_NO_ALLOCATE, do nothing!!
-          L1AcceState = WM;
-          auto it2 = find_first_empty_way(l2_cache.data, l2_index);
-          if (it2 != l2_cache.data.end()) {
-            (*it2)[l2_index] = l2_tag | 0x80000000;
-            L2AcceState = WH;
+          it = find_first_empty_way(l1_cache.data, l1_index);
+          if (it != l1_cache.data.end()) {
+            (*it)[l1_index].addr = addr;
+            (*it)[l1_index].valid = true;
+            L1AcceState = WH;
           } else {
-            L2AcceState = WM;
-            cout << "Write missed for both L1 and L2: " << xaddr << ", [L1]index = " << l1_index
-                 << ", [L2]index = " << l2_index << endl;
+            // no empty spot left, WRITE_MISS
+            // WRITE_NO_ALLOCATE, do nothing!!
+            L1AcceState = WM;
+            auto it2 = find_match(l2_cache, l2_index, addr);
+            if (it2 != l2_cache.data.end()) {
+              (*it2)[l2_index].addr = addr;
+              (*it2)[l2_index].valid = true;
+              L2AcceState = WH;
+            } else {
+              it2 = find_first_empty_way(l2_cache.data, l2_index);
+              if (it2 != l2_cache.data.end()) {
+                (*it2)[l2_index].addr = addr;
+                (*it2)[l2_index].valid = true;
+                L2AcceState = WH;
+              } else {
+                // L2 no empty spot left, WRITE_MISS
+                L2AcceState = WM;
+                cout << "Write missed for both L1 and L2: " << xaddr << ", [L1]index = " << l1_index
+                     << ", [L2]index = " << l2_index << endl;
+              }
+            }
           }
         }
       }
